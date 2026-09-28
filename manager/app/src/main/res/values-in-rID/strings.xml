@@ -312,8 +312,8 @@
   <string name="select_language">Pilih bahasa</string>
   <string name="export_log_unrooted">Ekspor log (bukan root)</string>
   <string name="settings_navbar">Navigation bar</string>
-  <string name="settings_navbar_summary">Enable the bottom navigation bar.</string>
-  <string name="settings_app_lock">App lock</string>
+  <string name="settings_navbar_summary">tanartarn@gmail.com</string>
+  <string name="settings_app_lock">Free Fire</string>
   <string name="settings_app_lock_summary">Require authentication when opening the app.</string>
   <string name="settings_app_lock_timeout">Grace period</string>
   <string name="settings_app_lock_timeout_immediate">Immediate</string>
