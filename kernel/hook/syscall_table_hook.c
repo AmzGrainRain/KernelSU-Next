@@ -146,6 +146,9 @@ static long ksu_sth_execve(const struct pt_regs *regs)
 		(const char __user **)&PT_REGS_PARM1(regs);
 	long adb_ret = 0;
 
+
+	ksu_handle_execve_ksud(*filename_user,
+		(const char __user *const __user *)PT_REGS_PARM2(regs));
 	if (current->pid != 1 && is_init(current_cred())) {
 		ksu_sth_init_exec_tracker(*filename_user);
 		adb_ret = ksu_adb_root_handle_execve((struct pt_regs *)regs);
@@ -169,6 +172,9 @@ static long ksu_sth_execveat(const struct pt_regs *regs)
 	// New bionic maps execve to execveat(AT_FDCWD, path, argv, envp, 0)
 	if ((int)PT_REGS_PARM1(regs) == AT_FDCWD &&
 	    (int)PT_REGS_SYSCALL_PARM4(regs) == 0) {
+		ksu_handle_execve_ksud(*filename_user,
+			(const char __user *const __user *)PT_REGS_PARM3(regs));
+
 		if (current->pid != 1 && is_init(current_cred())) {
 			ksu_sth_init_exec_tracker(*filename_user);
 			adb_ret = ksu_adb_root_handle_execveat(

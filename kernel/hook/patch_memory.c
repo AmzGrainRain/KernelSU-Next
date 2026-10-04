@@ -7,13 +7,7 @@
 
 #include "patch_memory.h"
 #include <linux/version.h>
-
-// copy_to_kernel_nofault() was introduced in 5.8; before that it was
-// named probe_kernel_write()
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-#define copy_to_kernel_nofault(dst, src, size)                                 \
-	probe_kernel_write((dst), (src), (size))
-#endif
+#include <linux/uaccess.h>
 
 #if defined(__aarch64__)
 
@@ -27,7 +21,6 @@
 #include "klog.h" // IWYU pragma: keep
 #include "linux/cpumask.h"
 #include "linux/gfp.h" // IWYU pragma: keep
-#include "linux/uaccess.h"
 #include "linux/stop_machine.h"
 #include "asm/cacheflush.h"
 #include "asm-generic/fixmap.h"
@@ -181,9 +174,14 @@ static int ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
     int phy_err;
     unsigned long phy = phys_from_virt(p, &phy_err);
     if (phy_err) {
-        ret = phy_err;
-        pr_err("failed to find phy addr for patch dst addr 0x%lx\n", p);
-        goto err;
+        /*
+         * On arm64, symbols in the relocated kernel image are not always
+         * reachable through init_mm's page-table walk on older vendor
+         * kernels. Use the architecture's KASLR-aware conversion for this
+         * kernel-image address (the syscall table is a vmlinux symbol).
+         */
+        phy = __pa(p);
+        pr_warn("page-table walk failed for kernel-image address 0x%lx; using __pa: 0x%lx\n", p, phy);
     }
     pr_debug("phy addr for patch 0x%lx: 0x%lx\n", p, phy);
 
@@ -201,7 +199,6 @@ static int ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
             ksu_flush_dcache(dst, len);
     }
 
-err:
     pr_debug("patch result=%d\n", ret);
     return ret;
 }
