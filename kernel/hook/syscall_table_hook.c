@@ -6,6 +6,7 @@
 #include <linux/preempt.h>
 #include <linux/uaccess.h>
 #include <linux/sched.h>
+#include <linux/stat.h>
 #include <linux/version.h>
 #include <linux/errno.h>
 #include <linux/fcntl.h>
@@ -25,11 +26,15 @@
 #include "hook/syscall_table_hook.h"
 #include "hook/patch_memory.h"
 #include "infra/symbol_resolver.h"
+#include "supercall/supercall.h"
 #include "policy/app_profile.h"
 #include "selinux/selinux.h"
 #include "feature/sucompat.h"
 #include "feature/adb_root.h"
 #include "runtime/ksud.h"
+
+void ksu_handle_sys_read(unsigned int fd);
+void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
 
 // The pt_regs-based syscall ABI (__arm64_sys_*/__x64_sys_*) exists since 4.17
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
@@ -208,14 +213,42 @@ static long ksu_sth_faccessat(const struct pt_regs *regs)
 #ifdef __NR_newfstatat
 static long ksu_sth_newfstatat(const struct pt_regs *regs)
 {
-	int *dfd = (int *)&PT_REGS_PARM1(regs);
+	int dfd = (int)PT_REGS_PARM1(regs);
 	const char __user **filename_user =
 		(const char __user **)&PT_REGS_PARM2(regs);
+	struct stat __user *statbuf = (struct stat __user *)PT_REGS_PARM3(regs);
+	int *dfd_ptr = &dfd;
 	int *flags = (int *)&PT_REGS_SYSCALL_PARM4(regs);
+	long ret;
 
-	ksu_handle_stat(dfd, filename_user, flags);
+	ksu_handle_stat(dfd_ptr, filename_user, flags);
+	ret = ksu_sth_call_orig(__NR_newfstatat, regs);
+	if (!ret)
+		ksu_handle_newfstat_ret((unsigned int *)&dfd, &statbuf);
 
-	return ksu_sth_call_orig(__NR_newfstatat, regs);
+	return ret;
+}
+#endif
+
+#ifdef __NR_read
+static long ksu_sth_read(const struct pt_regs *regs)
+{
+	ksu_handle_sys_read((unsigned int)PT_REGS_PARM1(regs));
+	return ksu_sth_call_orig(__NR_read, regs);
+}
+#endif
+
+#ifdef __NR_reboot
+static long ksu_sth_reboot(const struct pt_regs *regs)
+{
+	int magic1 = (int)PT_REGS_PARM1(regs);
+	int magic2 = (int)PT_REGS_PARM2(regs);
+	unsigned int cmd = (unsigned int)PT_REGS_PARM3(regs);
+	unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(regs);
+
+	ksu_handle_sys_reboot(magic1, magic2, cmd, (void __user **)&arg4);
+
+	return ksu_sth_call_orig(__NR_reboot, regs);
 }
 #endif
 
@@ -236,6 +269,12 @@ void __init ksu_syscall_table_hook_init(void)
 #endif
 #ifdef __NR_newfstatat
 		{ __NR_newfstatat, ksu_sth_newfstatat },
+#endif
+#ifdef __NR_read
+		{ __NR_read, ksu_sth_read },
+#endif
+#ifdef __NR_reboot
+		{ __NR_reboot, ksu_sth_reboot },
 #endif
 	};
 	int i, patched = 0;
